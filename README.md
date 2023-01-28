@@ -2,6 +2,8 @@
 
 The project was programmed in __Markdown__ so the file in __TAUCH Lukas IF 1 TD 5.Rmd__ but you can see an overview by saving the file in __TAUCH-Lukas-IF-1-TD-5.html__ in your __folders__
 
+[Download and save in your files this HTML document to have an HMTL overview of the project with code and interpretation](TAUCH-Lukas-IF-1-TD-5.html)
+
 Here are the steps of my project and the __step-by-step questions__ that are __answered and interpreted__ in the project :
 
 # DATA SETTING
