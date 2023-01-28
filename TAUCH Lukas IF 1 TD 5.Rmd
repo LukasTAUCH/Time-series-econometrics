@@ -1,0 +1,894 @@
+---
+title: "TAUCH Lukas IF 1 TD 5"
+author: "Lukas TAUCH"
+date: "2022-11-30"
+output:
+   rmdformats::readthedown:
+     highlight: kate
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Partie 1 Data setting and Unit root test
+
+# 1 data settings 
+
+## Load the data 
+
+```{r, message=FALSE, warning=FALSE}
+library(tseries)
+library(forecast)
+library(TSstudio)
+
+library(urca)
+library(tidyquant)
+library(magrittr)
+library(MASS)
+library(eFRED)
+```
+
+```{r}
+Rsxf <- fred("RSXFSN", all = FALSE)
+```
+
+## 2 Modification du data et détermination du type
+```{r}
+Rsxf_ts = ts(Rsxf$RSXFSN, start = c(1992,01), frequency = 12)
+ts_plot(Rsxf_ts, title = "Sales over time" )
+```
+
+On observe une trend avec une saisonalité qui se réperte et qui est **additive** car l'ampleur de la saisonnalité des fluctuations ne varient pas avec le niveau des séries chronologiques . 
+```{r}
+plot(decompose(Rsxf_ts))
+```
+
+On observe bien une trend et la sésonalité.
+On ne peut donc pas appliquer un ARMA(p,q) car on observe encore une non stationnarité et une sésonalité.
+
+```{r}
+acf(Rsxf_ts, lag = 120)
+pacf(Rsxf_ts, lag = 100 ) 
+```
+
+Notre Acf nous montre une grosse auto-corrélation donc dépendance des valeurs dans le passé ce qui montre une présence d'un AR
+On observe bien un ordre d'AR
+On observe aussi une saisonalité dans l'acf.
+
+## 3 Filtrage saisonnalité
+
+```{r, message=FALSE,warning=FALSE}
+filter.outliers = function(timeseries)
+{
+library(foreach)
+library(pracma)
+
+## on décompose notre time series
+stl_decomp = stl(timeseries, s.window = 'periodic', t.window = 13, robust = T)
+
+## On remove la saisonnalité
+TswithoutSais = seasadj(stl_decomp)
+
+## apply a hampel filter
+TsWS = hampel(TswithoutSais, k = 12)$y
+
+## put back the seasonal component
+return(TsWS)
+}
+
+Rsxf_Wseasonal <- filter.outliers(Rsxf_ts)
+
+plot(Rsxf_Wseasonal)
+```
+
+On a enlevé la plus part de la saisonnalité.
+
+```{r}
+#Autre méthode pour enlever la saisonnalité 
+Rsxf_WithoutSesonal2 <- Rsxf_ts - decompose(Rsxf_ts)$seasonal
+ts_plot(Rsxf_WithoutSesonal2)
+plot(decompose(Rsxf_WithoutSesonal2))
+```
+
+Le même résultat
+
+## 4 Check de notre Série
+
+```{r}
+plot(decompose(Rsxf_Wseasonal)) 
+```
+
+On ne peut toujours pas utiliser notre signal car il reste encore la stationnarité même si on a enlevé la saisonnalité. Donc on ne peut toujours pas utilisé un modèle ARMA(p,q)
+
+# 2 Unit Root tests
+
+## 1 Etude stationnarité ADF
+
+```{r,message=FALSE}
+adf.test(Rsxf_Wseasonal)
+```
+
+pvalue > O.O5 donc on **ne rejette pas l'hypotese** Ho qu'il y a présence de racine unitaire donc pi = 0 car (Pi = phi - 1)
+donc les coefficients sont significatif et Pi = 0 donc DS.
+
+```{r}
+x <- ur.df(Rsxf_Wseasonal, type = "trend", lag = 2)
+summary(x)
+#https://stats.stackexchange.com/questions/24072/interpreting-rs-ur-df-dickey-fuller-unit-root-test-results
+```
+
+On a pris lag 2 car il restait des * pour le lag = 1.
+Ici on voit que **-0.9096** > **-3.42** donc on ne rejette pas HO donc présence de racine unitaire donc $\pi = 0$ donc la série n'est pas stationnaire.   **On ne rejette pas Ho quand Vtest > tau3**
+Ensuite **5.0048** > **4.71** ici on test Ho $\beta1 = \beta 2 = \pi = 0$ on rejette donc Ho.                                                             **On ne rejette pas Ho quand Vtest < phi2**
+Et enfin **1.5297 ** < **6.30** avec Ho $\beta 2 = \pi = 0$ donc on ne rejette pas Ho.                                                                    **On ne rejette pas Ho quand Vtest < phi3**
+
+Donc la série n'est pas stationnaire avec $\beta 2 = \pi = 0 $ avec **5%** d'erreur.
+
+## 2 Degres d'intégration
+
+D'après nos résultat, notre degrès d'intégration est de 2. Car le lag 1 et lag 2 sont significatifs pour le test ADF.
+
+## 3 Phillips pheron
+
+```{r}
+summary(ur.pp(Rsxf_Wseasonal))
+```
+
+Ici pareil, on a une **1.6289** > **-0.1945** donc on ne rejette pas H0 où $\pi = 0$ et donc $\phi =1$ présence de la racine unitaire et donc la série n'est pas stationnaire.
+On retrouve la même interprétation que Dickey et Fuller.
+
+```{r}
+summary(ur.pp(diff(Rsxf_Wseasonal)))
+```
+Ici dans notre série filtrée de la trend et des saisonnalités, on observe donc bien que **-381.4512** < **2.9123** donc on rejette H0 donc la série est stationnaire.
+
+## 4 KPSS
+
+```{r}
+z <- ur.kpss(Rsxf_Wseasonal, type = "tau")
+summary(z)
+```
+
+Ici le test fait l'inverse donc **0.5403  > 0.146 ** donc on **rejette** l'hypothèse Ho donc la série n'est pas stationnaire.
+La série est donc bien non-stastionnaire.
+
+## 5 Degres d'intégration avec KPSS
+
+```{r}
+for (i in 1:7)
+{
+  x <- summary(ur.kpss(Rsxf_Wseasonal, type = "tau", use.lag = i))
+  print(x)
+}
+
+```
+
+Avec tous les test, on observe que $\pi = 0$ et que $\beta1$ est significatif. Cela correspond a une non-stationnarité processus **DS**
+Et que le degré d'intégration peut-être théoriquement de 2, or on voit que **différentier** avec un degré d'intégration de 1 rend notre série stationnaire.
+
+## 6 on applique donc le filtre avec différention 1
+
+```{r}
+Rsxf_Perfect <- diff(Rsxf_Wseasonal,lag = 1, differences = 1)
+ts_plot(Rsxf_Perfect)
+```
+
+On ne voit plus de trend.
+
+```{r}
+summary(ur.df(Rsxf_Perfect, type = "trend", lag = 1))
+```
+
+Ici **-21.0859** << **-3.42** donc rejet de **Ho** donc série stationnaire et donc $\pi < 0$
+Puis **148.2183** >> **4.71** donc non rejet de HO soit $\beta 1 = \pi = 0$
+Et enfin **222.3201** >> **6.30** donc non rejet de H0 soit $\beta 1 = \beta 2 = \pi = 0$
+
+donc nous avons ici une série **stationnaire** avec un d = 1.
+
+# 3 Modeliser la série 
+
+## 1 Most Revelant ARMA(p,q)
+```{r}
+acf(Rsxf_Perfect, lag = 120)
+```
+
+On voit une petite autocorrélation avec les évènements passés donc peut-être présence d'un AR.
+```{r}
+pacf(Rsxf_Perfect, lag = 120)
+```
+
+Avec la significativité différente de 0, on voit une corrélation différente de 0 pour potentiellement un AR(2)
+
+On va tester le meilleur modèle par AIC et BIC :
+
+```{r}
+best.order=c(0,0,0)
+best.AIC=10000
+for (i in 0:5) for (j in 0:5) 
+{
+  fit.AIC=AIC(arima(Rsxf_Perfect,order=c(i,0,j)))
+  if(fit.AIC < best.AIC)
+  {
+    best.order=c(i,0,j)
+    best.arma=arima(Rsxf_Perfect,order=best.order)
+    best.AIC=fit.AIC
+  }
+}
+ best.order 
+ best.AIC
+```
+
+```{r}
+best.order=c(0,0,0)
+best.BIC= 10000
+for (i in 0:5) for (j in 0:5)
+{ 
+  fit.BIC=BIC(arima(Rsxf_Perfect,order=c(i,0,j)))
+  if(fit.BIC < best.BIC)
+  {
+    best.order=c(i,0,j)
+    best.arma=arima(Rsxf_Perfect,order=best.order)
+    best.BIC=fit.BIC
+  }
+}
+best.order
+best.BIC
+```
+
+On obtient pour les 2 méthodes un **ARMA(4,4).**
+
+Pour une alternative, on peut modéliser notre méthode avant le filtrage pour la rendre stationnaire avec un ARIMA(p,d,q), on va donc faire d'une pierre deux coups.
+Rendre la série stationnaire et lui trouver un bon model.
+
+## 2 Test du model 
+
+```{r}
+Estimation <- arima(Rsxf_Perfect,order=c(4,0,4))
+
+values_observed <- Rsxf_Perfect 
+
+residus <- Estimation$residuals
+
+values_estimated <-(values_observed - residus)
+```
+
+```{r}
+par(mfrow=c(2,1))
+
+plot(values_estimated,type='l',ylab="values_estimated")
+plot(Rsxf_Perfect, type = "l")
+```
+On voit une ressemblance même s'il le modèle estimé ne fit pas parfaitement.
+
+**Quality Checks : Residus**
+```{r}
+Quality_Checks = matrix(0,ncol=2,nrow=20)
+for(i in 1:20)
+{
+  Quality_Checks[i,1] = Box.test(residus,lag=i,type="Ljung")$statistic
+  Quality_Checks[i,2] = Box.test(residus,lag=i,type="Ljung")$p.value
+}
+plot(Quality_Checks[,1])
+plot(Quality_Checks[,2])
+```
+
+On observe que la **p-value > 0,05** les résidus sont donc indépendant sur cette intervalle. 
+Cependant, Nous avons donc manqué quelque chose dans la modélisation de notre model. Peut-être le fait d'avoir fait une différence avec un degré d'uintégration à 1 au lieux de 2.
+
+```{r}
+acf(residus)
+pacf(residus)
+```
+
+On retrouve dans notre ACF, une petite autocorrélation mais ce modèle fit le mieux avec notre data.
+
+```{r}
+qqnorm(residus)
+qqline(residus)
+```
+
+On observe bien que les **résidus** suivent une distribution normale car la plupart des points se situent sur la ligne.
+
+```{r}
+plot(density(residus))
+```
+
+On voit bien ici que les résidus trouvés forment bien une **densité normale** centré en **0**.
+
+**QUALITY CHECKS Significativité des coefficients trouvés**
+
+$$RMSE = \sqrt{\frac{\sum_{i = 1}^{N} (Predicted_{i} - Actual_{i})^{2}}{N} }$$
+
+```{r}
+RMSE <- function(x,y)
+{
+  # with x is the predicted i vector 
+  # y the actual i vector
+  rmse <- sqrt(mean((x-y)^2))
+  return(rmse)
+}
+```
+
+```{r}
+RMSE(values_estimated,values_observed)
+```
+
+# Exercie 4 Estimating ARIMA(p,d,q)
+
+```{r, message=FALSE,warning=FALSE}
+jnj = tq_get("JNJ", get="stock.prices", from ="1997-01-01") %>% 
+tq_transmute(mutate_fun = to.period, period = "months")
+```
+
+```{r}
+head(jnj)
+```
+
+```{r}
+ts_plot(jnj)
+```
+
+```{r}
+acf(jnj$close, lag = 100)
+pacf(jnj$close, lag = 100)
+```
+
+on observe une trend très important au niveau du close. J'étudie le **close** pour le Johnson & Johnson stock price car la valeur du close représente bien une date précise. De plus le close, représente tout aussi bien le low et high un peu comme une moyenne sur une journée donnée.
+Ici, on voit que sur l'acf qu'il y a présence d'un AR car AR = MA(Infini)
+
+## 1 Détermination degré d'intégration 
+
+```{r}
+summary(ur.df(jnj$close, type = "trend", lag = 2))
+```
+
+On observe bien que **-1,3** > **-3,42** donc on ne rejette pas H0 soit $\pi = 0$ donc série non stationnaire.
+J'ai fais la l'ordre 2 car on a une p-value tres significative 3* avec une degré 2. 
+On suppose donc un degré d'intégration de **2**.
+
+```{r}
+summary(ur.df(diff(jnj$close), type = "trend", lag = 1))
+```
+Or ici j'intègre avec un degré de 1 et cela me renvoie a une série stationnaire car **-16** < **-3** donc on rejette **H0** => donc série **stationnaire**.
+
+Au final le **degré d'intégration** est de **1**.
+
+## 2 Order ARIMA(p,d,q)
+
+On connait d = 1 donc on peut faire la méthode du AIC et BIC pour déterminer l'ordre du ARIMA.
+
+
+```{r,message=FALSE,warning=FALSE}
+best.order=c(0,1,0)
+best.AIC=10000
+for (i in 0:5) for (j in 0:5) 
+{
+  fit.AIC=AIC(arima(jnj$close,order=c(i,1,j)))
+  if(fit.AIC < best.AIC)
+  {
+    best.order=c(i,1,j)
+    best.arma=arima(jnj$close,order=best.order)
+    best.AIC=fit.AIC
+  }
+}
+ best.order 
+ best.AIC
+```
+
+```{r,message=FALSE,warning=FALSE}
+best.order=c(0,1,0)
+best.BIC= 10000
+for (i in 0:5) for (j in 0:5)
+{ 
+  fit.BIC=BIC(arima(jnj$close,order=c(i,1,j)))
+  if(fit.BIC < best.BIC)
+  {
+    best.order=c(i,1,j)
+    best.arma=arima(jnj$close,order=best.order)
+    best.BIC=fit.BIC
+  }
+}
+best.order
+best.BIC
+```
+
+On se retrouve avec 2 modeles possible soit :
+AIC  ARIMA(5,1,5)
+BIC ARIMA(0,1,2)
+
+Cependant, avec notre PACF nous avions vu qu'il n'y avait pas d'ordre pour les AR donc le BIC semble être le plus représentatif.
+
+```{r}
+auto.arima(jnj$close)
+```
+
+Avec une auutre méthode, on retrouve le modèle ARIMA(0,1,2) comme étant le plus significatif.
+
+## 3 Fit ARIMA estimated valued 
+
+```{r}
+Estimation <- arima(jnj$close,order=c(0,1,2))
+
+values_observed <- jnj$close
+
+residus <- Estimation$residuals
+
+values_estimated <-(values_observed - residus)
+```
+
+```{r}
+par(mfrow=c(2,1))
+
+plot(values_estimated,type='l',ylab="values_estimated")
+plot(jnj$close, type = "l")
+```
+
+On observe une grosse ressemblence.
+
+## 4 QUality checks on Residuals
+
+```{r}
+Quality_Checks = matrix(0,ncol=2,nrow=20)
+for(i in 1:10)
+{
+  Quality_Checks[i,1] = Box.test(residus,lag=i,type="Ljung")$statistic
+  Quality_Checks[i,2] = Box.test(residus,lag=i,type="Ljung")$p.value
+}
+plot(Quality_Checks[,1])
+plot(Quality_Checks[,2])
+```
+
+On observe que la p-value > 0,05 les résidus sont donc indépendant sur cette intervalle. 
+Cependant, on a un drop de pvalue donc nous avons donc manqué quelque chose dans la modélisation de notre model. Peut-être le fait d'avoir fait une différence avec un degré d'uintégration à 1 au lieux de 2.
+
+```{r}
+acf(residus)
+#pacf(residus)
+```
+
+On voit dans l'ACF de nos résidus sont indépendants les uns des autres.
+
+```{r}
+qqnorm(residus)
+qqline(residus)
+```
+
+On observe bien que les **résidus** suivent une distribution normale car la plupart des points se situent sur la ligne.
+
+```{r}
+plot(density(residus))
+```
+
+On voit bien ici que les résidus trouvés forment bien une **densité normale** centré en **0**.
+
+## 5 Forecast 
+
+```{r}
+predic <-forecast(values_estimated,level=c(95),h=10)
+
+plot(predic, xlim=c(250,320))
+prediction<- predict(predic,jnj$close,se = TRUE,interval="prediction")
+lines(prediction$lower,lty="dashed",col="red")
+lines(prediction$upper,lty="dashed",col="red")
+```
+
+CALULER CONFIDENCE DU FORCAST 
+
+# 5 Unit root test 
+
+## 1 Zivot and Andrews
+
+Le test de Zivot et Andrews améliore le test de stationnarité d'une série temporelle. En effet, cette méthode dait un test de racine unitaire avec une rupture structurelle. Cette rupture est estimé.
+
+Soit notre Hypothèse H0 : $\pi = 0$ donc série non stationnaire 
+H1 : $\pi < 0$ avec soit : 
+- 0 break 
+- 1 break ->  constante 
+          ->  Trend
+          ->  constante + Trend
+          
+## 2 Generer 3 marches aléatoires
+
+```{r}
+set.seed(123)
+ut <- rnorm(500,0,1)
+
+t <- 1:500
+# Random walk
+y <- cumsum(ut)
+
+# Random walk with break 
+ybreak <- c()
+for (i in 1:500)
+{
+  ifelse( i< 250, ybreak[i] <- cumsum(ut[i]),ybreak[i] <- 20 + cumsum(ut[i]))
+}
+
+#random walk with break and trend
+ytrend <- c()
+for (i in 1:500)
+{
+  ifelse( i< 250, ytrend[i] <- cumsum(ut[i]) + 0.05*t[i] ,ytrend[i] <- 20 + cumsum(ut[i]) + 0.05*t[i])
+}
+
+plot(ytrend, type = "l")
+lines(ybreak, type = "l", col = "blue")
+lines(y, type = "l", col = "red")
+
+#library(strucchange)
+#library(zoo)
+
+#nbreak <- breakpoints(ybreak~t, h = 20) 
+```
+
+## 3 Test Zivot and Andrews 
+
+Dans un premier temps on va regarder avec un test adf avec comme condition  **On ne rejette pas Ho quand Vtest > tau3** donc série non stationnaire.
+
+```{r}
+#summary(ur.df(y, type = "trend", lag = 1))
+#summary(ur.df(ybreak, type = "trend", lag = 1))
+#summary(ur.df(ytrend, type = "trend", lag = 1))
+
+# J'évite de le print mais je vous met une interpretation en dessous.
+```
+
+Pour y la marche aléatoire normale :
+**-2.41 > -3.42** donc la série n'est pas stationnaire
+De même pôur la marche aléatoire avec un break (constante) :
+**-2.6139 > -3.42**
+Et pour la marche aléatoire avec break et trend 
+**-2.6139 > -3.42**
+
+Donc d'après notre test ADF aucune des 3 n'est stationnaires.
+
+Maintennant on applique le test de Zivot et Andrews.
+ 
+```{r}
+summary(ur.za(y, model = "both", lag = 1))
+summary(ur.za(ybreak, model = "both", lag = 1))
+summary(ur.za(ytrend, model = "both", lag = 1))
+```
+
+Pour la marche aléatoire simple :
+**-3.6612 > -5.08** donc non rejet de H0 donc $\pi = 0$ donc non stationaire avec potentiellement un break à l'indice 263.
+
+Cependant pour la marche aléatoire avec break (en constante) :
+**-28.723 < -5.08** donc on rejette **H0** donc la série est stationnaire avec un **break** à l'indice **249**, pour rappelle j'ai mis mon break à l'indice **250**. Le test est donc assez précis.
+
+Et enfin pour la marche aléatoire avec break et trend, on a 
+**-28.723 < -5.08** donc de même série stationnaire mais avec un break à l'indice **249**.
+
+on voit donc l'importance de faire des tests avec ruptures structurelles.
+
+## 4 ZA in US retail sales 
+
+on replot notre jeu de donnée sans séonalité.
+
+```{r}
+ts_plot(Rsxf_Wseasonal)
+```
+
+On observe potentiellement un break au alentour des années **2007**.
+
+```{r}
+#summary(ur.df(Rsxf_Wseasonal, type = "trend", lag = 1))
+summary(ur.za(Rsxf_Wseasonal, model = "both", lag = 1))
+```
+
+Je rappelle qu'avec DF on trouve : **-2.3639 > -3.42** donc séries non stationnaire 
+Alors qu'avec ZA on trouve : **-7.0187 < -5.08** donc série stationnaire avec un break à l'indice **350**
+Donc on peut se poser la question si ce break, chute en 2007, à l'indice **350** ne faussait pas tous nos tests.
+
+# 6 Modeling the business cycle 
+
+## Load data
+```{r,message=FALSE,warning=FALSE}
+Gdp <- fred("GDP", all = FALSE)
+Gdp <- na.omit(Gdp, "GDP")
+#Gdp
+```
+
+J'enlève toute valeure null.
+
+## Modification en TS
+```{r}
+Gdp_ts = ts(Gdp$GDP, start = c(1947,01), frequency = 4)
+ts_plot(Gdp_ts, title = "Gross Domestic Product over time" )
+```
+
+On observe un belle **trend** avec pas de saisonalité apparente.
+
+## Tests sur notre Time serie
+
+```{r}
+#plot(decompose(Gdp_ts))
+```
+
+```{r}
+acf(Gdp_ts, lag = 100)
+pacf(Gdp_ts)
+```
+
+ACF -> Grosse autocorrélation, peut-être présence d'un AR.
+PACF -> 1 seul corrélation à 1
+
+```{r}
+summary(ur.df(Gdp_ts, type = "trend", lag = 1))
+```
+
+On observe avec le test de Dickey Fuller que **2.3865 > -3.42** donc non rejet de **H0** -> $\pi = 0$ donc série non stationnaire.
+Par rapport au drift et trend notre T-stat sont **supérieures** aux valeurs 5% donc on rejette leur H0 donc rejet de nullité.
+
+Mais nous aller voir si ce n'est pas un problème de **break**
+
+```{r}
+summary(ur.za(Gdp_ts, model = "both", lag = 1))
+```
+On a **-1.2838 > -5.08** donc non rejet de H0 qui comme adf $\pi = 0$ donc série non sationnaire mais potentielle break à l'indice **294**.
+
+Conclusion : On sait donc que notre série est bien non sattionnaire avec d = 2
+
+## Différentiation et estimation du model ARIMA
+
+Différention avec d = 1
+```{r}
+Gdp_perfect <- diff(Gdp_ts, differences = 2)
+ts_plot(Gdp_perfect)
+```
+
+Test de stationnarité
+```{r}
+summary(ur.df(Gdp_perfect, type = "trend", lag = 1))
+#summary(ur.pp(Gdp_perfect))
+#summary(ur.za(Gdp_perfect, model = "both", lag = 1))
+```
+avec notre test on a **-22.8284 < -3.42** donc rejet de **H0** donc série stationnaire.
+
+## Estimation du model ARIMA avec d = 2 et ARMA 
+
+```{r}
+acf(Gdp_perfect)
+pacf(Gdp_perfect)
+```
+
+ACF -> Très petit autocorrélation mais existante MA(1) 
+PACF -> petite corrélation AR(1)
+
+```{r}
+auto.arima(Gdp_ts)
+```
+```{r}
+auto.arima(Gdp_perfect)
+```
+
+ARIMA(p,2,q)
+
+```{r,message=FALSE,warning=FALSE}
+best.order=c(0,2,0)
+best.AIC=10000
+for (i in 0:5) for (j in 0:5) 
+{
+  fit.AIC=AIC(arima(Gdp_ts,order=c(i,2,j), method = "ML"))
+  if(fit.AIC < best.AIC)
+  {
+    best.order=c(i,2,j)
+    best.arma=arima(Gdp_ts,order=best.order, method = "ML")
+    best.AIC=fit.AIC
+  }
+}
+ best.order 
+ best.AIC
+```
+
+```{r,message=FALSE,warning=FALSE}
+best.order=c(0,2,0)
+best.BIC= 10000
+for (i in 0:5) for (j in 0:5)
+{ 
+  fit.BIC=BIC(arima(Gdp_ts,order=c(i,2,j), method = "ML"))
+  if(fit.BIC < best.BIC)
+  {
+    best.order=c(i,2,j)
+    best.arma=arima(Gdp_ts,order=best.order, method = "ML")
+    best.BIC=fit.BIC
+  }
+}
+best.order
+best.BIC
+```
+
+Avec le **AIC**, on obtient un **ARIMA(1,2,1)** et pour le **BIC** un **ARIMA(0,2,1)**
+
+Determination ARMA(p,q) avec notre série différentié 
+
+```{r,message=FALSE,warning=FALSE}
+best.order=c(0,0,0)
+best.AIC=10000
+for (i in 0:5) for (j in 0:5) 
+{
+  fit.AIC=AIC(arima(Gdp_perfect,order=c(i,0,j), method = "ML"))
+  if(fit.AIC < best.AIC)
+  {
+    best.order=c(i,0,j)
+    best.arma=arima(Gdp_perfect,order=best.order, method = "ML")
+    best.AIC=fit.AIC
+  }
+}
+ best.order 
+ best.AIC
+```
+
+```{r,message=FALSE,warning=FALSE}
+best.order=c(0,0,0)
+best.BIC= 10000
+for (i in 0:5) for (j in 0:5)
+{ 
+  fit.BIC=BIC(arima(Gdp_perfect,order=c(i,0,j), method = "ML"))
+  if(fit.BIC < best.BIC)
+  {
+    best.order=c(i,0,j)
+    best.arma=arima(Gdp_perfect,order=best.order, method = "ML")
+    best.BIC=fit.BIC
+  }
+}
+best.order
+best.BIC
+```
+
+
+Avec le **AIC**, on obtient un **ARIMA(0,0,3)** et pour le **BIC** un **ARIMA(0,0,1)**
+
+
+En conclusion, j'utilise le **ARIMA(1,2,1)** car il est correct par rapport à notre ACF et PACF
+Et l'**ARMA(0,0,2)**
+
+## Valeurs estimées avec nos 2 modèles ARIMA(1,2,1) et ARMA(0,0,2) 
+
+ARIMA(1,2,1)
+
+```{r}
+Estimation_Gdp <- arima(Gdp_ts,order=c(1,2,1), method = "ML")
+
+values_observed_Gdp <- Gdp_ts
+
+residus_Gdp <- Estimation_Gdp$residuals
+
+values_estimated_Gdp <-(values_observed_Gdp - residus_Gdp)
+```
+
+```{r}
+par(mfrow=c(2,1))
+
+plot(values_estimated_Gdp,type='l',ylab="values_estimated")
+plot(Gdp_ts, type = "l")
+```
+
+ARMA(0,0,2)
+
+```{r}
+Estimation_Gdp2 <- arima(Gdp_perfect,order=c(0,0,2), method = "ML")
+
+values_observed_Gdp2 <- Gdp_perfect
+
+residus_Gdp2 <- Estimation_Gdp2$residuals
+
+values_estimated_Gdp2 <-(values_observed_Gdp2 - residus_Gdp2)
+```
+
+```{r}
+par(mfrow=c(2,1))
+
+plot(values_estimated_Gdp2,type='l',ylab="values_estimated")
+plot(Gdp_perfect, type = "l")
+```
+
+## Quality checks 
+
+ARIMA(1,2,1)
+
+```{r}
+Quality_Checks = matrix(0,ncol=2,nrow=20)
+for(i in 1:10)
+{
+  Quality_Checks[i,1] = Box.test(residus_Gdp,lag=i,type="Ljung")$statistic
+  Quality_Checks[i,2] = Box.test(residus_Gdp,lag=i,type="Ljung")$p.value
+}
+plot(Quality_Checks[,1])
+plot(Quality_Checks[,2])
+```
+
+On observe que la p-value > 0,05 jusqu'à un lag < 10 les résidus sont donc indépendant sur cette intervalle. Nous avons donc manqué quelque chose dans la modélisation de notre model.
+
+```{r}
+acf(residus_Gdp)
+#pacf(residus_Gdp)
+```
+
+On voit dans l'ACF de nos résidus sont indépendants les uns des autres.
+
+```{r}
+qqnorm(residus_Gdp)
+qqline(residus_Gdp)
+```
+
+On observe bien que les **résidus** suivent une distribution normale car la plupart des points se situent sur la ligne.
+
+```{r}
+plot(density(residus_Gdp))
+```
+
+On voit bien ici que les résidus trouvés forment bien une **densité normale** centré en **0**.
+
+```{r}
+RMSE(values_estimated_Gdp,values_observed_Gdp)
+```
+
+ARMA(0,0,2)
+
+```{r}
+Quality_Checks = matrix(0,ncol=2,nrow=20)
+for(i in 1:10)
+{
+  Quality_Checks[i,1] = Box.test(residus_Gdp2,lag=i,type="Ljung")$statistic
+  Quality_Checks[i,2] = Box.test(residus_Gdp2,lag=i,type="Ljung")$p.value
+}
+plot(Quality_Checks[,1])
+plot(Quality_Checks[,2])
+```
+
+On observe que la p-value > 0,05 les résidus sont donc indépendant sur cette intervalle.
+
+```{r}
+acf(residus_Gdp2)
+#pacf(residus_Gdp2)
+```
+
+On voit dans l'ACF de nos résidus sont indépendants les uns des autres.
+
+```{r}
+qqnorm(residus_Gdp2)
+qqline(residus_Gdp2)
+```
+
+On observe bien que les **résidus** suivent une distribution normale car la plupart des points se situent sur la ligne.
+
+```{r}
+plot(density(residus_Gdp2))
+```
+
+On voit bien ici que les résidus trouvés forment bien une **densité normale** centré en **0**.
+
+```{r}
+RMSE(values_estimated_Gdp2,values_observed_Gdp2)
+```
+
+**On remarque que les résidus des 2 modèles sont très similaires en terme de leur forme et la même RMSE**
+
+## Forecasting 
+
+ARIMA(1,2,1)
+
+```{r}
+predic_Gdp <-forecast(values_estimated_Gdp,level=c(95),h=10)
+
+plot(predic_Gdp, xlim=c(2000,2025))
+prediction_Gdp<- predict(predic_Gdp,Gdp_ts,se.fit = TRUE,interval="prediction")
+lines(prediction_Gdp$lower,lty="dashed",col="red")
+lines(prediction_Gdp$upper,lty="dashed",col="red")
+```
+
+ARMA(0,0,2)
+
+```{r}
+predic_Gdp2 <-forecast(Estimation_Gdp2,level=c(95),h=5)
+
+plot(predic_Gdp2,xlim=c(2015,2024))
+prediction_Gdp2<- predict(predic_Gdp2,Gdp_perfect,se.fit = TRUE, interval="prediction")
+lines(prediction_Gdp2$lower,lty="dashed",col="red")
+lines(prediction_Gdp2$upper,lty="dashed",col="red")
+```
+
+Voici les différents forecasting.
+On remarque que le forecasting du model ARIMA(1,2,1) semble meilleur que celui de ARMA(0,0,2).
